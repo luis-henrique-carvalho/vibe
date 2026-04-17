@@ -1,5 +1,7 @@
 import { inngest } from "./client";
 import { openai, createAgent } from "@inngest/agent-kit";
+import { Sandbox } from "@e2b/code-interpreter";
+import { getSandbox } from "./utils";
 
 export const processTask = inngest.createFunction(
   { id: "process-task", triggers: { event: "app/task.created" } },
@@ -16,7 +18,12 @@ export const processTask = inngest.createFunction(
 
 export const sendOpenAiMessage = inngest.createFunction(
   { id: "send-openai-message", triggers: { event: "app/summarize" } },
-  async ({ event }) => {
+  async ({ event, step }) => {
+    const sandboxId = await step.run("get-sendbox-id", async () => {
+      const sandbox = await Sandbox.create("vibe-nextjs-test-3");
+      return sandbox.sandboxId;
+    });
+
     const summarizer = createAgent({
       name: "summarizer",
       system:
@@ -24,8 +31,16 @@ export const sendOpenAiMessage = inngest.createFunction(
       model: openai({ model: "gpt-4o", apiKey: process.env.OPEN_AI_KEY }),
     });
 
+    const sandboxUrl = await step.run("get-sandbox-url", async () => {
+      const sandbox = await getSandbox(sandboxId);
+
+      const host = sandbox.getHost(3000);
+
+      return `https://${host}`;
+    });
+
     const response = await summarizer.run(event.data.message);
 
-    return { summary: response };
+    return { summary: response, sandboxUrl };
   },
 );

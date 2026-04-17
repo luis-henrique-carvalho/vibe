@@ -1,0 +1,20 @@
+# You can use most Debian-based base images
+FROM node:24-slim
+
+# Install curl
+RUN apt-get update && apt-get install -y curl && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+COPY compile_page.sh /compile_page.sh
+RUN chmod +x /compile_page.sh
+
+# Install dependencies and customize sandbox
+WORKDIR /home/user/nextjs-app
+
+RUN npx --yes create-next-app@16.2.3 . --yes
+
+RUN npx --yes shadcn@4.2.0 init --yes --preset vega --force
+RUN npx --yes shadcn@4.2.0 add --all --yes
+
+# Move the Nextjs app to the home directory and remove the nextjs-app directory
+RUN cp -a /home/user/nextjs-app/. /home/user/ && rm -rf /home/user/nextjs-app
+WORKDIR /home/user
