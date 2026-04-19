@@ -12,8 +12,7 @@ WORKDIR /home/user/nextjs-app
 
 RUN npx --yes create-next-app@16.2.3 . --yes
 
-RUN npx --yes shadcn@4.2.0 init --yes -b base --force
-RUN npx --yes shadcn@4.2.0 add --all --yes
+RUN npx --yes shadcn@latest init --yes --base radix --force
+RUN npx --yes shadcn@latest add --all --yes
 
-# Move the Nextjs app to the home directory and remove the nextjs-app directory
-RUN mv /home/user/nextjs-app/. /home/user/ && rm -rf /home/user/nextjs-app
+RUN mv /home/user/nextjs-app/* /home/user/ && rm -rf /home/user/nextjs-app
