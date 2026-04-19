@@ -40,7 +40,7 @@ export const appRouter = createTRPCRouter({
       await inngest.send({
         name: "app/summarize",
         data: {
-          message: input.message,
+          value: input.message,
         },
       });
 

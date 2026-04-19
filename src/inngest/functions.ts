@@ -6,87 +6,13 @@ import {
   createNetwork,
 } from "@inngest/agent-kit";
 import { Sandbox } from "@e2b/code-interpreter";
-import { getSandbox, lastAssistantTextMessageContent } from "./utils";
+import {
+  getSandbox,
+  lastAssistantTextMessageContent,
+  ensureDevServer,
+} from "./utils";
 import z from "zod";
 import { PROMPT } from "@/prompt";
-
-type AppCheckResult = {
-  success: boolean;
-  statusCode: number | null;
-  url: string;
-  errors: string[];
-  stdout: string;
-  stderr: string | null;
-};
-
-async function checkNextJsAppInSandbox(
-  sandboxId: string,
-  path = "/",
-): Promise<AppCheckResult> {
-  const buffers = { stdout: "", stderr: "" };
-  const routePath = path.startsWith("/") ? path : `/${path}`;
-  const url = `http://127.0.0.1:3000${routePath}`;
-
-  try {
-    const sandbox = await getSandbox(sandboxId);
-    const command = [
-      "cd /home/user",
-      `status=$(curl -sS -L -o /tmp/vibe-next-check.html -w "%{http_code}" "${url}" || true)`,
-      'echo "STATUS:$status"',
-      'echo "---NEXT_LOG_TAIL---"',
-      "tail -n 200 /tmp/next.log || true",
-    ].join(" && ");
-
-    const result = await sandbox.commands.run(command, {
-      onStdout(data: string) {
-        buffers.stdout += data;
-      },
-      onStderr(data: string) {
-        buffers.stderr += data;
-      },
-    });
-
-    const stdout = result.stdout || buffers.stdout;
-    const output = `${stdout}\n${buffers.stderr}`.trim();
-    const statusCodeMatch = output.match(/STATUS:(\d{3})/);
-    const statusCode = statusCodeMatch ? Number(statusCodeMatch[1]) : null;
-    const errorPatterns = [
-      "Module not found",
-      "Failed to compile",
-      "Build Error",
-      "Syntax Error",
-      "Type error",
-      "Unhandled Runtime Error",
-      "Error: Cannot find module",
-    ];
-    const detectedErrors = errorPatterns.filter((pattern) =>
-      output.includes(pattern),
-    );
-    const success =
-      statusCode !== null &&
-      statusCode >= 200 &&
-      statusCode < 400 &&
-      detectedErrors.length === 0;
-
-    return {
-      success,
-      statusCode,
-      url,
-      errors: detectedErrors,
-      stdout,
-      stderr: buffers.stderr || null,
-    };
-  } catch (error) {
-    return {
-      success: false,
-      statusCode: null,
-      url,
-      errors: [`App check failed: ${error}`],
-      stdout: buffers.stdout,
-      stderr: buffers.stderr || null,
-    };
-  }
-}
 
 export const processTask = inngest.createFunction(
   { id: "process-task", triggers: { event: "app/task.created" } },
@@ -208,6 +134,12 @@ export const sendOpenAiMessage = inngest.createFunction(
               network.state.data.files = newFiles;
               network.state.data.appCheckPassed = false;
             }
+
+            // Ensure the dev server is still running after file changes
+            await step?.run("ensure-dev-server-after-write", async () => {
+              const sandbox = await getSandbox(sandboxId);
+              await ensureDevServer(sandbox);
+            });
           },
         }),
         createTool({
@@ -242,33 +174,6 @@ export const sendOpenAiMessage = inngest.createFunction(
             });
           },
         }),
-        createTool({
-          name: "checkNextJsApp",
-          description:
-            "Checks whether the already-running Next.js dev server can render a route without compilation errors. This does not run build/dev/start commands.",
-          parameters: z.object({
-            path: z
-              .string()
-              .default("/")
-              .describe("The route path to check, usually '/'."),
-          }),
-          handler: async ({ path }, { step, network }) => {
-            console.log({
-              tool: "checkNextJsApp",
-              path,
-              sandboxId,
-            });
-
-            return await step?.run("check-nextjs-app", async () => {
-              const payload = await checkNextJsAppInSandbox(sandboxId, path);
-
-              network.state.data.lastAppCheck = payload;
-              network.state.data.appCheckPassed = payload.success;
-
-              return JSON.stringify(payload);
-            });
-          },
-        }),
       ],
       lifecycle: {
         onResponse: async ({ result, network }) => {
@@ -277,11 +182,7 @@ export const sendOpenAiMessage = inngest.createFunction(
 
           if (lastAssistantMessageText && network) {
             if (lastAssistantMessageText.includes("<task_summary>")) {
-              if (network.state.data.appCheckPassed) {
-                network.state.data.summary = lastAssistantMessageText;
-              } else {
-                network.state.data.rejectedSummary = lastAssistantMessageText;
-              }
+              network.state.data.summary = lastAssistantMessageText;
             }
           }
 
@@ -291,7 +192,7 @@ export const sendOpenAiMessage = inngest.createFunction(
     });
 
     const network = createNetwork({
-      name: "code-agent-network",
+      name: "coding-agent-network",
       agents: [codeAgent],
       maxIter: 15,
       router: async ({ network }) => {
@@ -305,38 +206,28 @@ export const sendOpenAiMessage = inngest.createFunction(
       },
     });
 
-    const result = await network.run(event.data.message);
-
-    const finalAppCheck = await step.run("final-nextjs-app-check", async () => {
-      return await checkNextJsAppInSandbox(sandboxId, "/");
-    });
-
-    result.state.data.lastAppCheck = finalAppCheck;
-    result.state.data.appCheckPassed = finalAppCheck.success;
-
-    if (!finalAppCheck.success) {
-      result.state.data.summary = null;
-    } else if (!result.state.data.summary && result.state.data.rejectedSummary) {
-      result.state.data.summary = result.state.data.rejectedSummary;
-    }
+    const result = await network.run(event.data.value);
 
     const sandboxUrl = await step.run("get-sandbox-url", async () => {
       const sandbox = await getSandbox(sandboxId);
 
+      // Ensure the dev server is running before returning the URL
+      await ensureDevServer(sandbox);
+
       const host = sandbox.getHost(3000);
+
+      console.log("Sandbox URL:", host);
 
       return `https://${host}`;
     });
 
+    console.log("SANDBOX URL RESULT", sandboxUrl);
+
     return {
-      sandboxId,
       url: sandboxUrl,
       title: "Fragment",
-      files: result.state.data.files ?? {},
-      summary: result.state.data.summary ?? null,
-      appCheck: result.state.data.lastAppCheck ?? null,
-      validationStatus: finalAppCheck.success ? "ready" : "failed",
-      summaryRejected: Boolean(result.state.data.rejectedSummary),
+      files: result.state.data.files,
+      summary: result.state.data.summary,
     };
   },
 );
