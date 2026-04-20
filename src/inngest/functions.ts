@@ -4,6 +4,7 @@ import {
   createAgent,
   createTool,
   createNetwork,
+  type Tool,
 } from "@inngest/agent-kit";
 import { Sandbox } from "@e2b/code-interpreter";
 import {
@@ -13,22 +14,16 @@ import {
 } from "./utils";
 import z from "zod";
 import { PROMPT } from "@/prompt";
+import { prisma } from "@/lib/prisma";
 
-export const processTask = inngest.createFunction(
-  { id: "process-task", triggers: { event: "app/task.created" } },
-  async ({ event, step }) => {
-    const result = await step.run("handle-task", async () => {
-      return { processed: true, message: event.data.message };
-    });
+interface AgentState {
+  summary: string;
+  files: { [path: string]: string };
+  appCheckPassed?: boolean;
+}
 
-    await step.sleep("pause", "5s");
-
-    return { message: `Task ${event.data.message} complete`, result };
-  },
-);
-
-export const sendOpenAiMessage = inngest.createFunction(
-  { id: "send-openai-message", triggers: { event: "app/summarize" } },
+export const codeAgentFunction = inngest.createFunction(
+  { id: "code-agent", triggers: { event: "code-agent/run" } },
   async ({ event, step }) => {
     const sandboxId = await step.run("get-sandbox-id", async () => {
       const sandbox = await Sandbox.create("vibe-nextjs-test-9225");
@@ -36,7 +31,7 @@ export const sendOpenAiMessage = inngest.createFunction(
       return sandbox.sandboxId;
     });
 
-    const codeAgent = createAgent({
+    const codeAgent = createAgent<AgentState>({
       name: "code-agent",
       description:
         "An expert coding agent that can read and write files and run terminal commands in a sandboxed Next.js environment",
@@ -99,7 +94,10 @@ export const sendOpenAiMessage = inngest.createFunction(
               }),
             ),
           }),
-          handler: async ({ files }, { step, network }) => {
+          handler: async (
+            { files },
+            { step, network }: Tool.Options<AgentState>,
+          ) => {
             console.log({
               tool: "createOrUpdateFiles",
               files,
@@ -134,12 +132,6 @@ export const sendOpenAiMessage = inngest.createFunction(
               network.state.data.files = newFiles;
               network.state.data.appCheckPassed = false;
             }
-
-            // Ensure the dev server is still running after file changes
-            await step?.run("ensure-dev-server-after-write", async () => {
-              const sandbox = await getSandbox(sandboxId);
-              await ensureDevServer(sandbox);
-            });
           },
         }),
         createTool({
@@ -191,7 +183,7 @@ export const sendOpenAiMessage = inngest.createFunction(
       },
     });
 
-    const network = createNetwork({
+    const network = createNetwork<AgentState>({
       name: "coding-agent-network",
       agents: [codeAgent],
       maxIter: 15,
@@ -206,7 +198,11 @@ export const sendOpenAiMessage = inngest.createFunction(
       },
     });
 
-    const result = await network.run(event.data.value);
+    const result = await network.run(event.data.message);
+
+    const isError =
+      !result.state.data.summary ||
+      Object.keys(result.state.data.files || {}).length === 0;
 
     const sandboxUrl = await step.run("get-sandbox-url", async () => {
       const sandbox = await getSandbox(sandboxId);
@@ -216,12 +212,35 @@ export const sendOpenAiMessage = inngest.createFunction(
 
       const host = sandbox.getHost(3000);
 
-      console.log("Sandbox URL:", host);
-
       return `https://${host}`;
     });
 
-    console.log("SANDBOX URL RESULT", sandboxUrl);
+    await step.run("save-result", async () => {
+      if (isError) {
+        return await prisma.message.create({
+          data: {
+            content: "Something went wrong. Please try again.",
+            role: "ASSISTANT",
+            type: "ERROR",
+          },
+        });
+      }
+
+      return await prisma.message.create({
+        data: {
+          content: result.state.data.summary,
+          role: "ASSISTANT",
+          type: "RESULT",
+          fragment: {
+            create: {
+              sandboxUrl: sandboxUrl,
+              title: "Fragment",
+              files: result.state.data.files,
+            },
+          },
+        },
+      });
+    });
 
     return {
       url: sandboxUrl,
