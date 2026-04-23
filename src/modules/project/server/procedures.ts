@@ -5,15 +5,43 @@ import z from "zod";
 import { generateSlug } from "random-word-slugs";
 
 export const projectRouter = createTRPCRouter({
-  getAll: baseProcedure.query(async () => {
-    const project = await prisma.project.findMany({
-      orderBy: {
-        createdAt: "asc",
-      },
-    });
+  getOne: baseProcedure
+    .input(
+      z.object({
+        id: z.string().min(1, { message: "ID cannot be empty" }),
+      }),
+    )
+    .query(async ({ input }) => {
+      const project = await prisma.project.findUnique({
+        where: {
+          id: input.id,
+        },
+      });
 
-    return project;
-  }),
+      if (!project) {
+        throw new Error("project not found");
+      }
+
+      return project;
+    }),
+  getAll: baseProcedure
+    .input(
+      z.object({
+        id: z.string().min(1, { message: "Project ID cannot be empty" }),
+      }),
+    )
+    .query(async ({ input }) => {
+      const projects = await prisma.project.findMany({
+        where: {
+          id: input.id,
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      });
+
+      return projects;
+    }),
   create: baseProcedure
     .input(
       z.object({
