@@ -11,6 +11,7 @@
   "dependencies": {
     "@base-ui/react": "^1.4.0",
     "@e2b/code-interpreter": "^2.4.0",
+    "@hookform/resolvers": "^5.2.2",
     "@hugeicons/core-free-icons": "^4.1.1",
     "@hugeicons/react": "^1.1.6",
     "@inngest/agent-kit": "^0.13.2",
@@ -38,7 +39,9 @@
     "react": "19.2.4",
     "react-day-picker": "^9.14.0",
     "react-dom": "19.2.4",
+    "react-hook-form": "^7.73.1",
     "react-resizable-panels": "^4.10.0",
+    "react-textarea-autosize": "^8.5.9",
     "recharts": "^3.8.0",
     "server-only": "^0.0.1",
     "shadcn": "^4.2.0",
