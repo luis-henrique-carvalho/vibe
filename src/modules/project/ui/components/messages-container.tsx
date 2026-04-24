@@ -5,12 +5,20 @@ import { useTRPC } from "@/trpc/client";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { MessageCard } from "./message-card";
 import { MessageForm } from "./message-form";
+import { Fragment } from "@/generated/prisma/client";
+import { MessagesLoading } from "./message-loading";
 
 interface MessageContainerProps {
   projectId: string;
+  activeFragment: Fragment | null;
+  setActiveFragment: (fragment: Fragment | null) => void;
 }
 
-export const MessagesContainer = ({ projectId }: MessageContainerProps) => {
+export const MessagesContainer = ({
+  projectId,
+  activeFragment,
+  setActiveFragment,
+}: MessageContainerProps) => {
   const trpc = useTRPC();
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -20,17 +28,20 @@ export const MessagesContainer = ({ projectId }: MessageContainerProps) => {
 
   useEffect(() => {
     const lastAssistantMessage = messages.findLast(
-      (message) => message.role === "ASSISTANT",
+      (message) => message.role === "ASSISTANT" && message.fragment !== null,
     );
 
     if (lastAssistantMessage) {
-      // TODO: SET ACTIVE FRAGMENT
+      setActiveFragment(lastAssistantMessage.fragment);
     }
-  }, [messages]);
+  }, [messages, setActiveFragment]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView();
   }, [messages.length]);
+
+  const lastMessage = messages[messages.length - 1];
+  const isLastMessage = lastMessage?.role === "USER";
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -43,11 +54,12 @@ export const MessagesContainer = ({ projectId }: MessageContainerProps) => {
               role={message.role}
               fragment={message.fragment}
               createdAt={message.createdAt}
-              isActiveFragment={false}
-              onFragmentClick={() => {}}
+              isActiveFragment={activeFragment?.id === message.fragment?.id}
+              onFragmentClick={() => setActiveFragment(message.fragment)}
               type={message.type}
             />
           ))}
+          {isLastMessage && <MessagesLoading />}
           <div ref={bottomRef} />
         </div>
       </div>
