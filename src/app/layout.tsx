@@ -8,6 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 
 import "./globals.css";
+import { ThemeProvider } from "next-themes";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -35,6 +36,7 @@ export default function RootLayout({
     <TRPCReactProvider>
       <html
         lang="en"
+        suppressHydrationWarning
         className={cn(
           "h-full",
           "antialiased",
@@ -45,10 +47,17 @@ export default function RootLayout({
         )}
       >
         <body className="min-h-full flex flex-col">
-          <TooltipProvider>
-            <Toaster />
-            {children}
-          </TooltipProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            <TooltipProvider>
+              <Toaster />
+              {children}
+            </TooltipProvider>
+          </ThemeProvider>
         </body>
       </html>
     </TRPCReactProvider>
