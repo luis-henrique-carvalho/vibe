@@ -9,6 +9,7 @@ import { MessagesContainer } from "../components/messages-container";
 import { Suspense, useState } from "react";
 import { Fragment } from "@/generated/prisma/client";
 import { ProjectHeader } from "../components/project-header";
+import { FragmentWeb } from "../components/fragment-web";
 
 interface ProjectViewProps {
   projectId: string;
@@ -38,22 +39,7 @@ export const ProjectView = ({ projectId }: ProjectViewProps) => {
         </ResizablePanel>
         <ResizableHandle withHandle />
         <ResizablePanel defaultSize="75%" minSize="50%">
-          {activeFragment ? (
-            <div className="p-4">
-              <h2 className="text-lg font-semibold mb-2">
-                {activeFragment.title}
-              </h2>
-              <pre className="bg-muted p-4 rounded-lg overflow-x-auto">
-                {JSON.stringify(activeFragment.files, null, 2)}
-              </pre>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-muted-foreground">
-                Select a message to view the fragment
-              </p>
-            </div>
-          )}
+          {!!activeFragment && <FragmentWeb data={activeFragment} />}
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>
