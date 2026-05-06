@@ -4,7 +4,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import TextareaAutosize from "react-textarea-autosize";
 import { ArrowUpIcon, Loader2Icon } from "lucide-react";
@@ -26,6 +26,7 @@ const formSchema = z.object({
 
 export const ProjectForm = () => {
   const router = useRouter();
+  const pathname = usePathname();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const form = useForm<z.infer<typeof formSchema>>({
@@ -43,8 +44,13 @@ export const ProjectForm = () => {
         // TODO: Invalidate usage status
       },
       onError: (error) => {
-        // TODO: Redirect to pricing page if specific error
         toast.error(error.message);
+
+        if (error.data?.code === "UNAUTHORIZED") {
+          router.push(`/sign-in?redirectTo=${encodeURIComponent(pathname)}`);
+        }
+
+        // TODO: Redirect to pricing page if specific error
       },
     }),
   );

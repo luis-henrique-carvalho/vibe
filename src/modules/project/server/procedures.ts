@@ -1,20 +1,21 @@
 import { inngest } from "@/inngest/client";
 import { prisma } from "@/lib/prisma";
-import { baseProcedure, createTRPCRouter } from "@/trpc/init";
+import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import z from "zod";
 import { generateSlug } from "random-word-slugs";
 
 export const projectRouter = createTRPCRouter({
-  getOne: baseProcedure
+  getOne: protectedProcedure
     .input(
       z.object({
         id: z.string().min(1, { message: "ID cannot be empty" }),
       }),
     )
-    .query(async ({ input }) => {
-      const project = await prisma.project.findUnique({
+    .query(async ({ ctx, input }) => {
+      const project = await prisma.project.findFirst({
         where: {
           id: input.id,
+          userId: ctx.userId,
         },
       });
 
@@ -24,16 +25,17 @@ export const projectRouter = createTRPCRouter({
 
       return project;
     }),
-  getAll: baseProcedure
+  getAll: protectedProcedure
     .input(
       z.object({
         id: z.string().min(1, { message: "Project ID cannot be empty" }),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const projects = await prisma.project.findMany({
         where: {
           id: input.id,
+          userId: ctx.userId,
         },
         orderBy: {
           createdAt: "asc",
@@ -42,8 +44,11 @@ export const projectRouter = createTRPCRouter({
 
       return projects;
     }),
-  getMany: baseProcedure.query(async () => {
+  getMany: protectedProcedure.query(async ({ ctx }) => {
     const projects = await prisma.project.findMany({
+      where: {
+        userId: ctx.userId,
+      },
       orderBy: {
         updatedAt: "desc",
       },
@@ -51,7 +56,7 @@ export const projectRouter = createTRPCRouter({
 
     return projects;
   }),
-  create: baseProcedure
+  create: protectedProcedure
     .input(
       z.object({
         value: z
@@ -60,12 +65,13 @@ export const projectRouter = createTRPCRouter({
           .max(10000, "Message cannot exceed 10000 characters"),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const createdProject = await prisma.project.create({
         data: {
           name: generateSlug(2, {
             format: "kebab",
           }),
+          userId: ctx.userId,
           messages: {
             create: {
               content: input.value,

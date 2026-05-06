@@ -1,19 +1,23 @@
 import { inngest } from "@/inngest/client";
 import { prisma } from "@/lib/prisma";
-import { baseProcedure, createTRPCRouter } from "@/trpc/init";
+import { TRPCError } from "@trpc/server";
+import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 import z from "zod";
 
 export const messagesRouter = createTRPCRouter({
-  getOne: baseProcedure
+  getOne: protectedProcedure
     .input(
       z.object({
         id: z.string().min(1, { message: "ID cannot be empty" }),
       }),
     )
-    .query(async ({ input }) => {
-      const message = await prisma.message.findUnique({
+    .query(async ({ ctx, input }) => {
+      const message = await prisma.message.findFirst({
         where: {
           id: input.id,
+          project: {
+            userId: ctx.userId,
+          },
         },
       });
 
@@ -23,16 +27,19 @@ export const messagesRouter = createTRPCRouter({
 
       return message;
     }),
-  getAll: baseProcedure
+  getAll: protectedProcedure
     .input(
       z.object({
         projectId: z.string().min(1, { message: "Project ID cannot be empty" }),
       }),
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const messages = await prisma.message.findMany({
         where: {
           projectId: input.projectId,
+          project: {
+            userId: ctx.userId,
+          },
         },
         include: {
           fragment: true,
@@ -44,7 +51,7 @@ export const messagesRouter = createTRPCRouter({
 
       return messages;
     }),
-  create: baseProcedure
+  create: protectedProcedure
     .input(
       z.object({
         content: z
@@ -54,13 +61,30 @@ export const messagesRouter = createTRPCRouter({
         projectId: z.string().min(1, { message: "Project ID cannot be empty" }),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      const project = await prisma.project.findFirst({
+        where: {
+          id: input.projectId,
+          userId: ctx.userId,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!project) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Project not found",
+        });
+      }
+
       const createdMessage = await prisma.message.create({
         data: {
           content: input.content,
           role: "USER",
           type: "RESULT",
-          projectId: input.projectId,
+          projectId: project.id,
         },
       });
 
@@ -68,7 +92,7 @@ export const messagesRouter = createTRPCRouter({
         name: "code-agent/run",
         data: {
           message: input.content,
-          projectId: input.projectId,
+          projectId: project.id,
         },
       });
 
