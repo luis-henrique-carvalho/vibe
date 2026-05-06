@@ -42,10 +42,19 @@ export const projectRouter = createTRPCRouter({
 
       return projects;
     }),
+  getMany: baseProcedure.query(async () => {
+    const projects = await prisma.project.findMany({
+      orderBy: {
+        updatedAt: "desc",
+      },
+    });
+
+    return projects;
+  }),
   create: baseProcedure
     .input(
       z.object({
-        message: z
+        value: z
           .string()
           .min(1, "Message cannot be empty")
           .max(10000, "Message cannot exceed 10000 characters"),
@@ -59,7 +68,7 @@ export const projectRouter = createTRPCRouter({
           }),
           messages: {
             create: {
-              content: input.message,
+              content: input.value,
               role: "USER",
               type: "RESULT",
             },
@@ -70,7 +79,7 @@ export const projectRouter = createTRPCRouter({
       await inngest.send({
         name: "code-agent/run",
         data: {
-          message: input.message,
+          message: input.value,
           projectId: createdProject.id,
         },
       });
